@@ -367,13 +367,24 @@ def expand_drop_off(ship: Ship, seen: set,
 
 ''' Function to create a new manifest file once job has been completed '''   
 def update_manifest(file_name: str, manifest: pd.DataFrame) -> None:
-    file_name = file_name.replace('ship_cases/', 'ship_cases_outbound/')
-    file_name = file_name.replace(".txt", "OUTBOUND.txt")
-    manifest.to_csv(file_name, header=None, index=False)
-    os_name = os.getlogin()
-    desktop = 'C:\\Users\\' + os_name + '\\OneDrive\\Desktop\\' +\
-              file_name.replace('ship_cases_outbound/', '')
-    manifest.to_csv(desktop, header=None, index=False)
+    # Always write an outbound copy next to the project files
+    outbound_path = file_name.replace('ship_cases/', 'ship_cases_outbound/')
+    outbound_path = outbound_path.replace(".txt", "OUTBOUND.txt")
+    manifest.to_csv(outbound_path, header=None, index=False)
+
+    # Best-effort attempt to also place a copy on the user's Desktop
+    # in a cross-platform way (works on Windows, macOS, and most Linux desktops).
+    try:
+        from pathlib import Path
+
+        desktop_dir = Path.home() / "Desktop"
+        if desktop_dir.is_dir():
+            desktop_file = desktop_dir / outbound_path.replace('ship_cases_outbound/', '')
+            manifest.to_csv(desktop_file, header=None, index=False)
+    except Exception:
+        # If anything goes wrong (no Desktop folder, permissions, etc.),
+        # we silently skip the Desktop copy and rely on the outbound_path.
+        pass
         
 
 ''' Function to parse the hashed table into a list of words '''
