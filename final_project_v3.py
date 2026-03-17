@@ -5,6 +5,7 @@ import heapq
 import copy
 import time
 import os
+import tkinter as tk
 
 import pandas as pd
 
@@ -93,6 +94,12 @@ def main():
                   ':', '{:.3f}'.format(time2 - time1), 'seconds\n')
             print('Estimated time to balance:',
                   calculate_time(operations), 'minutes\n')
+
+            # Optional: graphical visualization of the grid and next placements
+            use_ui = input('Open graphical grid view? (y/n): ').strip().lower()
+            if use_ui == 'y':
+                launch_ship_ui(ship, operations)
+
             user_name = balancing(ship, operations,
                                   manifest, user_name,
                                   ship_name, log_file)
@@ -468,6 +475,124 @@ def display_ship_status(ship: Ship, ship_name: str, user_name: str) -> None:
     print_table(ship.bay, S_COLS)
     print('Port weight:', ship.get_left_kg(),
           '\t\tStarboard weight:', ship.get_right_kg())
+  
+
+''' Simple Tkinter UI to visualize the ship grid and next placements '''
+def launch_ship_ui(ship: Ship, operations: list[Operation] | None = None) -> None:
+    # Work on a deep copy so we can mutate positions as moves are applied
+    import copy as _copy
+    current_ship = _copy.deepcopy(ship)
+
+    S_ROWS = len(current_ship.bay)
+    S_COLS = len(current_ship.bay[0])
+
+    root = tk.Tk()
+    root.title("Ship Balancing Grid")
+
+    cell_size = 40
+    canvas_width = S_COLS * cell_size
+    canvas_height = S_ROWS * cell_size
+
+    canvas = tk.Canvas(root, width=canvas_width, height=canvas_height, bg="white")
+    canvas.grid(row=0, column=0, columnspan=4, padx=10, pady=10)
+
+    status_var = tk.StringVar()
+    status_label = tk.Label(root, textvariable=status_var, font=("Arial", 10))
+    status_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=10)
+
+    # op_index keeps track of:
+    # - "i": current index into operations (always points to the next Move)
+    # - "phase": "preview" (show yellow/red) or "apply" (actually move box)
+    op_index = {"i": 0, "phase": "preview"}
+
+    def draw_grid(highlight_from: tuple[int, int] | None = None,
+                  highlight_to: tuple[int, int] | None = None) -> None:
+        canvas.delete("all")
+        for r in range(S_ROWS):
+            for c in range(S_COLS):
+                x1 = c * cell_size
+                y1 = r * cell_size
+                x2 = x1 + cell_size
+                y2 = y1 + cell_size
+
+                name = current_ship.bay[r][c].name
+
+                # Base color by cell type
+                if name == '+++':              # blocked
+                    fill = "#d3d3d3"
+                elif name.strip() == '':       # empty
+                    fill = "#ffffff"
+                else:                          # occupied
+                    fill = "#cce5ff"
+
+                # Highlight next move:
+                # - yellow: box that should be moved (source)
+                # - red: target cell where it should be moved
+                if highlight_from and (r, c) == highlight_from:
+                    fill = "#ffeb3b"  # yellow for pick-up
+                if highlight_to and (r, c) == highlight_to:
+                    fill = "#ff5252"  # red for drop-off
+
+                canvas.create_rectangle(x1, y1, x2, y2, fill=fill, outline="black")
+                if name.strip():
+                    canvas.create_text(
+                        (x1 + x2) / 2,
+                        (y1 + y2) / 2,
+                        text=name.strip(),
+                        font=("Arial", 8)
+                    )
+
+        left = current_ship.get_left_kg()
+        right = current_ship.get_right_kg()
+        status_var.set(
+            f"Port weight: {left}   Starboard weight: {right}   "
+            f"Difference: {abs(left - right)}"
+        )
+
+    # Track progress through operations; we consume them in Move/To pairs
+    def next_step() -> None:
+        if not operations or op_index["i"] >= len(operations):
+            return
+
+        # Each logical step is a pair: Move (pick up) then To (drop off)
+        # If we don't have a full pair left, stop.
+        if op_index["i"] + 1 >= len(operations):
+            return
+
+        move_op = operations[op_index["i"]]
+        to_op = operations[op_index["i"] + 1]
+
+        # Phase 1: preview (yellow source, red target; no box moved yet)
+        if op_index["phase"] == "preview":
+            highlight_from = (move_op.x, move_op.y)
+            highlight_to = (to_op.x, to_op.y)
+            draw_grid(highlight_from, highlight_to)
+            op_index["phase"] = "apply"
+            return
+
+        # Phase 2: apply the move (swap boxes) and show updated grid with no highlights
+        if op_index["phase"] == "apply":
+            x1, y1 = move_op.x, move_op.y
+            x2, y2 = to_op.x, to_op.y
+            current_ship.bay[x1][y1], current_ship.bay[x2][y2] = (
+                current_ship.bay[x2][y2],
+                current_ship.bay[x1][y1],
+            )
+            draw_grid()
+            op_index["i"] += 2
+            op_index["phase"] = "preview"
+            return
+
+    draw_grid()
+
+    if operations:
+        next_button = tk.Button(root, text="Next placement step", command=next_step)
+        next_button.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
+
+    close_button = tk.Button(root, text="Close", command=root.destroy)
+    close_button.grid(row=2, column=3, sticky="e", padx=10, pady=(0, 10))
+
+    root.mainloop()
   
 
 ''' Function to let the operator perform the operations on the ship '''
